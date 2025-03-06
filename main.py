@@ -48,11 +48,13 @@ class StudentCardBot(commands.Bot):
 
     def save_data(self, user_id, data):
         """บันทึกข้อมูลลงฐานข้อมูล SQLite"""
-        self.cursor.execute("""
-        INSERT OR REPLACE INTO students (user_id, house, class_name, DOB, name, partner, profile_image_url, waiting_for_image)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (user_id, data['house'], data['class_name'], data['DOB'], data['name'], data['partner'], data['profile_image_url'], data['waiting_for_image']))
-        self.conn.commit()
+        # เช็คว่าเป็นการแก้ไขหรือเพิ่มข้อมูล
+        if 'house' in data and 'class_name' in data and 'DOB' in data and 'name' in data and 'partner' in data:
+            self.cursor.execute("""
+            INSERT OR REPLACE INTO students (user_id, house, class_name, DOB, name, partner, profile_image_url, waiting_for_image)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (user_id, data['house'], data['class_name'], data['DOB'], data['name'], data['partner'], data['profile_image_url'], data['waiting_for_image']))
+            self.conn.commit()
 
 bot = StudentCardBot()
 
