@@ -65,18 +65,21 @@ class StudentCardModal(discord.ui.Modal, title="กรอกข้อมูล�
     partner = discord.ui.TextInput(label="คู่หู", placeholder="ใส่ชื่อคู่หูคุณ", required=True)
 
     async def on_submit(self, interaction: discord.Interaction):
-        # บันทึกข้อมูลที่กรอกไว้ใน SQLite
-        bot.save_data(str(interaction.user.id), {
-            "house": self.house.value,
-            "class_name": self.class_name.value,
-            "DOB": self.DOB.value,
-            "name": self.name.value,
-            "partner": self.partner.value,
-            "profile_image_url": None,  # ยังไม่มีการกำหนดรูปภาพ
-            "waiting_for_image": 1  # กำลังรอรูปภาพ
-        })
-        
-        await interaction.response.send_message("โปรดแนบรูปภาพที่ต้องการใช้บนบัตร", ephemeral=False)
+      user_id = str(interaction.user.id)
+    
+      # ตรวจสอบให้แน่ใจว่าข้อมูลครบถ้วนก่อนบันทึก
+      bot.student_data[user_id] = {
+        "house": self.house.value.strip(),
+        "class_name": self.class_name.value.strip(),
+        "DOB": self.DOB.value.strip(),
+        "name": self.name.value.strip(),
+        "partner": self.partner.value.strip(),
+        "profile_image_url": bot.student_data.get(user_id, {}).get("profile_image_url"),  # เก็บค่าเดิมไว้ถ้ามี
+        "waiting_for_image": False  # ตั้งค่าเริ่มต้น
+      }
+      bot.save_data()
+    
+      await interaction.response.send_message("บันทึกข้อมูลเรียบร้อย!", ephemeral=False)
 
 # ✅ Modal แก้ไขข้อมูล (แยกจาก StudentCardModal)
 class EditInfoModal(discord.ui.Modal, title="แก้ไขข้อมูลบัตรนักเรียน"):
@@ -157,16 +160,26 @@ class EditCardView(discord.ui.View):
         # บันทึกข้อมูลใหม่ใน SQLite แต่ไม่สร้างรูปใหม่
         await interaction.response.send_modal(EditInfoModal(self.user_id))
 
-    @discord.ui.button(label="เปลี่ยนรูปโปรไฟล์", style=discord.ButtonStyle.secondary)
-    async def change_image_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if str(interaction.user.id) != self.user_id:
-            await interaction.response.send_message("คุณไม่สามารถเปลี่ยนรูปของคนอื่นได้!", ephemeral=True)
-            return
+   @discord.ui.button(label="เปลี่ยนรูปโปรไฟล์", style=discord.ButtonStyle.secondary)
+   async def change_image_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+     user_id = str(interaction.user.id)
 
-        # ตั้งค่าให้บอทรอรับรูปใหม่
-        bot.save_data(str(interaction.user.id), {"waiting_for_image": 1})
-        await interaction.response.send_message("โปรดส่งรูปภาพที่คุณต้องการใช้ใหม่!", ephemeral=False)
+     # ตรวจสอบว่ามีข้อมูลของ user ใน JSON หรือไม่
+     if user_id not in bot.student_data:
+        await interaction.response.send_message("คุณยังไม่มีบัตรนักเรียน! ใช้ `/studentcard` เพื่อสร้าง", ephemeral=True)
+        return
 
+     # ตรวจสอบว่ามี key "house" หรือไม่
+     if "house" not in bot.student_data[user_id]:
+        await interaction.response.send_message("ข้อมูลของคุณไม่สมบูรณ์ กรุณาสร้างบัตรใหม่โดยใช้ `/studentcard`", ephemeral=True)
+        return
+
+     # ตั้งค่าว่ากำลังรอรูปภาพ
+     bot.student_data[user_id]["waiting_for_image"] = True
+     bot.save_data()
+
+     await interaction.response.send_message("โปรดส่งรูปภาพที่คุณต้องการใช้ใหม่!", ephemeral=False)
+    
 # ✅ รับไฟล์รูปภาพและอัพเดทข้อมูล
 @bot.event
 async def on_message(message):
