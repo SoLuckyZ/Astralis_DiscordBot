@@ -235,4 +235,3 @@ def create_student_card(card_path, house, class_name, DOB, name, partner, profil
 server_on()
 
 bot.run(os.getenv('TOKEN'))
-
