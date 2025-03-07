@@ -247,6 +247,10 @@ def create_student_card(card_path, house, class_name, DOB, name, partner, profil
 @app_commands.describe(user="ผู้ใช้", amount="จำนวน point ที่ต้องการเพิ่ม")
 @app_commands.checks.has_permissions(administrator=True)
 async def addpoints(interaction: discord.Interaction, user: discord.Member, amount: int):
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("คุณไม่มีสิทธิ์ใช้คำสั่งนี้ (ต้องเป็นผู้ดูแลเซิร์ฟเวอร์)", ephemeral=True)
+        return
+    
     await interaction.response.defer() 
 
     ref = db.collection("points").document(str(user.id))
@@ -266,6 +270,10 @@ async def addpoints(interaction: discord.Interaction, user: discord.Member, amou
 @app_commands.describe(user="ผู้ใช้", amount="จำนวน point ที่ต้องการลด")
 @app_commands.checks.has_permissions(administrator=True)
 async def removepoints(interaction: discord.Interaction, user: discord.Member, amount: int):
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("คุณไม่มีสิทธิ์ใช้คำสั่งนี้ (ต้องเป็นผู้ดูแลเซิร์ฟเวอร์)", ephemeral=True)
+        return
+    
     await interaction.response.defer()  
 
     ref = db.collection("points").document(str(user.id))
