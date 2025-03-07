@@ -245,7 +245,6 @@ def create_student_card(card_path, house, class_name, DOB, name, partner, profil
 # คำสั่งเพิ่ม point
 @bot.tree.command(name="addpoints", description="เพิ่ม point ให้ผู้ใช้")
 @app_commands.describe(user="ผู้ใช้", amount="จำนวน point ที่ต้องการเพิ่ม")
-@app_commands.checks.has_permissions(administrator=True)
 async def addpoints(interaction: discord.Interaction, user: discord.Member, amount: int):
     if not interaction.user.guild_permissions.administrator:
         await interaction.response.send_message("คุณไม่มีสิทธิ์ใช้คำสั่งนี้ (ต้องเป็นผู้ดูแลเซิร์ฟเวอร์)", ephemeral=True)
@@ -268,7 +267,6 @@ async def addpoints(interaction: discord.Interaction, user: discord.Member, amou
 # คำสั่งลด point
 @bot.tree.command(name="removepoints", description="ลด point ของผู้ใช้")
 @app_commands.describe(user="ผู้ใช้", amount="จำนวน point ที่ต้องการลด")
-@app_commands.checks.has_permissions(administrator=True)
 async def removepoints(interaction: discord.Interaction, user: discord.Member, amount: int):
     if not interaction.user.guild_permissions.administrator:
         await interaction.response.send_message("คุณไม่มีสิทธิ์ใช้คำสั่งนี้ (ต้องเป็นผู้ดูแลเซิร์ฟเวอร์)", ephemeral=True)
