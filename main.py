@@ -10,7 +10,7 @@ from firebase_admin import credentials, firestore
 from myserver import server_on
 
 # ตั้งค่า Firestore
-cred = credentials.Certificate('/secrets/serviceAccountKey.json')
+cred = credentials.Certificate('/etc/secrets/serviceAccountKey.json')
 firebase_admin.initialize_app(cred)
 db = firestore.client()
 
