@@ -2,6 +2,7 @@ import discord
 import os
 from discord import app_commands
 from discord.ext import commands
+from discord.ui import View, Button
 from PIL import Image, ImageDraw, ImageFont
 import requests
 from io import BytesIO
@@ -74,11 +75,11 @@ class StudentCardModal(discord.ui.Modal, title="กรอกข้อมูล�
             "waiting_for_image": True
         }
 
-        await interaction.response.send_message("โปรดแนบรูปภาพที่ต้องการใช้บนบัตร (กรอบรูปมีขนาด 490 x 540)", ephemeral=False)
+        await interaction.response.send_message("โปรดส่งรูปภาพที่คุณต้องการใช้บนบัตร (กรอบรูปมีขนาด 490 x 540)", ephemeral=False)
 
 # ✅ Modal แก้ไขข้อมูล (แยกจาก StudentCardModal)
 class EditInfoModal(discord.ui.Modal, title="แก้ไขข้อมูลบัตรนักเรียน"):
-    house = discord.ui.TextInput(label="บ้าน", placeholder="เช่น มังกรฟ้า , วิหกเพลิง", required=True)
+    house = discord.ui.TextInput(label="บ้าน", placeholder="ซาราเซล/เลเซีย/บารัน/ซูซากุ/ลิลิธ", required=True)
     class_name = discord.ui.TextInput(label="ชั้น", placeholder="ใส่ชั้นเรียนของคุณ", required=True)
     DOB = discord.ui.TextInput(label="วันเกิด", placeholder="วว/ดด/ปปปป", required=True)
     name = discord.ui.TextInput(label="ชื่อ", placeholder="ใส่ชื่อของคุณ", required=True)
@@ -178,7 +179,7 @@ class EditCardView(discord.ui.View):
         # ตั้งค่าให้บอทรอรับรูปใหม่
         db.collection('student_cards').document(str(interaction.user.id)).update({"waiting_for_image": True})
 
-        await interaction.response.send_message("โปรดส่งรูปภาพที่คุณต้องการใช้ใหม่! (กรอบรูปมีขนาด 490 x 540)", ephemeral=False)
+        await interaction.response.send_message("โปรดส่งรูปภาพที่คุณต้องการใช้ใหม่ (กรอบรูปมีขนาด 490 x 540)", ephemeral=False)
 
 # ✅ รับไฟล์รูปภาพและอัพเดทข้อมูล
 @bot.event
@@ -301,17 +302,79 @@ async def points(interaction: discord.Interaction, user: discord.Member = None):
 
     await interaction.followup.send(embed=embed) 
 
+#ระบบกระดานคะแนน
+class ScoreboardView(View):
+    def __init__(self, data, page=0):
+        super().__init__(timeout=120)
+        self.data = data
+        self.page = page
+        self.max_pages = (len(data) - 1) // 10  # คำนวณจำนวนหน้าสูงสุด
+        self.update_buttons()
+
+    async def update_embed(self, interaction: discord.Interaction):
+        self.update_buttons()
+        embed = await self.get_embed(interaction.client)
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    def update_buttons(self):
+        """อัปเดตปุ่มให้ถูกต้องตามหน้าปัจจุบัน"""
+        self.previous_button.disabled = self.page == 0
+        self.next_button.disabled = self.page >= self.max_pages
+
+    async def get_embed(self, bot):
+        start_idx = self.page * 10
+        end_idx = start_idx + 10
+        leaderboard = self.data[start_idx:end_idx]
+
+        embed = discord.Embed(title="🏆 Leaderboard", color=0x191970, timestamp= discord.utils.utcnow())
+        for i, (user_id, points) in enumerate(leaderboard, start=start_idx + 1):
+            user = await bot.fetch_user(user_id)
+            username = user.name if user else f"Unknown ({user_id})"
+            embed.add_field(name=f"#{i} {username}", value=f"▫️ {points} Points", inline=False)
+        
+        embed.set_footer(text=f"Page {self.page + 1} / {self.max_pages + 1}")
+        return embed
+
+    @discord.ui.button(label="⬅️ Previous", style=discord.ButtonStyle.primary, disabled=True)
+    async def previous_button(self, interaction: discord.Interaction, button: Button):
+        if self.page > 0:
+            self.page -= 1
+            self.update_buttons()
+            await self.update_embed(interaction)
+
+    @discord.ui.button(label="➡️ Next", style=discord.ButtonStyle.primary, disabled=False)
+    async def next_button(self, interaction: discord.Interaction, button: Button):
+        if self.page < self.max_pages:
+            self.page += 1
+            self.update_buttons()
+            await self.update_embed(interaction)
+
+@bot.tree.command(name="leaderboard", description="ดูตารางอันดับ(พอยต์)ของทุกคน")
+async def scoreboard(interaction: discord.Interaction):
+    await interaction.response.defer()
+
+    users_ref = db.collection("points").stream()
+    scores = {doc.id: doc.to_dict().get("points", 0) for doc in users_ref}
+
+    if not scores:
+        await interaction.followup.send("⚠️ ไม่มีข้อมูลคะแนน!", ephemeral=True)
+        return
+
+    sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    
+    view = ScoreboardView(sorted_scores)
+    embed = await view.get_embed(interaction.client)
+    
+    await interaction.followup.send(embed=embed, view=view)
+
 # คำสั่ง help
 @bot.tree.command(name='help', description='วิธีใช้งานคำสั่งต่างๆ')
 async def helpcommand(interaction):
-    emmbed = discord.Embed(title='Bot Commands - คำสั่งที่สามารถใช้งานได้ ', description='[Slash Command]', color=0x191970, timestamp= discord.utils.utcnow())
+    emmbed = discord.Embed(title='Bot Commands - คำสั่งที่สามารถใช้งานได้ ', description='[ใช้ Slash Command]', color=0x191970, timestamp= discord.utils.utcnow())
 
     # ใส่ข้อมูล
-    emmbed.add_field(name='General', value='`/points @ผู้ใช้`  - เพื่อดูพอยต์ของคุณ\n`/studentcard` - เพื่อสร้างบัตรนักเรียน\n`/viewcard @ผู้ใช้` - เพื่อดูบัตรนักเรียนของคุณ', inline=False)
+    emmbed.add_field(name='General', value='`/points @ผู้ใช้`  - เพื่อดูพอยต์ของคุณ\n`/leaderboard` - เพื่อดูตารางอันดับพอยต์ของทุกคน\n`/studentcard` - เพื่อสร้างบัตรนักเรียน\n`/viewcard @ผู้ใช้` - เพื่อดูบัตรนักเรียนของคุณ', inline=False)
     emmbed.add_field(name='Administrator', value='`/addpoints @ผู้ใช้ จำนวน` - เพื่อเพิ่มพอยต์ให้ @ผู้ใช้\n`/removepoints @ผู้ใช้ จำนวน` - เพื่อลดพอยต์ของ @ผู้ใช้', inline=False)
-
-    # Footer เนื้อหาส่วนท้าย
-    emmbed.set_footer(text='Footer')
 
     await interaction.response.send_message(embed = emmbed)
 
