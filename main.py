@@ -243,47 +243,61 @@ def create_student_card(card_path, house, class_name, DOB, name, partner, profil
     # บันทึกไฟล์บัตรนักเรียน
     card.save(card_path)
 
-# คำสั่งเพิ่ม point
-@bot.tree.command(name="addpoints", description="เพิ่ม point ให้ผู้ใช้")
-@app_commands.describe(user="ผู้ใช้", amount="จำนวน point ที่ต้องการเพิ่ม")
-async def addpoints(interaction: discord.Interaction, user: discord.Member, amount: int):
+async def update_points(targets, amount):
+    """อัปเดตพอยต์ให้กับผู้ใช้หลายคน"""
+    batch = db.batch()
+    for user in targets:
+        doc_ref = db.collection("points").document(str(user.id))
+        doc = doc_ref.get()
+
+        if doc.exists:
+            current_points = doc.to_dict().get("points", 0)
+        else:
+            current_points = 0
+
+        batch.set(doc_ref, {"points": current_points + amount}, merge=True)
+
+    batch.commit()
+
+@bot.tree.command(name="addpoints", description="เพิ่มพอยต์ให้ผู้ใช้หรือยศที่ถูก Mention")
+async def addpoints(interaction: discord.Interaction, user: discord.Member | discord.Role, amount: int):
     if not interaction.user.guild_permissions.administrator:
         await interaction.response.send_message("คุณไม่มีสิทธิ์ใช้คำสั่งนี้ (ต้องเป็นผู้ดูแลเซิร์ฟเวอร์)", ephemeral=True)
         return
     
-    await interaction.response.defer() 
+    await interaction.response.defer()
 
-    ref = db.collection("points").document(str(user.id))
-    doc = ref.get()
+    if isinstance(user, discord.Role):  # ถ้าเป็น Role ให้ดึงสมาชิกทั้งหมด
+        members = [member for member in user.members if not member.bot]
+        if not members:
+            await interaction.followup.send(f"⚠️ ไม่มีสมาชิกในยศ {user.mention} ที่สามารถเพิ่มพอยต์ได้!", ephemeral=True)
+            return
+    else:  # ถ้าเป็น Member ปกติ
+        members = [user]
 
-    if doc.exists:
-        new_points = doc.to_dict()["points"] + amount
-    else:
-        new_points = amount
+    await update_points(members, amount)
 
-    ref.set({"points": new_points})
+    await interaction.followup.send(f"เพิ่ม {amount} พอยต์ให้กับ {', '.join(member.mention for member in members)} สำเร็จ!", ephemeral=True)
 
-    await interaction.followup.send(f"เพิ่ม {amount} point ให้ {user.mention} แล้ว!") 
-
-# คำสั่งลด point
-@bot.tree.command(name="removepoints", description="ลด point ของผู้ใช้")
-@app_commands.describe(user="ผู้ใช้", amount="จำนวน point ที่ต้องการลด")
-async def removepoints(interaction: discord.Interaction, user: discord.Member, amount: int):
+@bot.tree.command(name="removepoints", description="ลดพอยต์ของผู้ใช้หรือยศที่ถูก Mention")
+async def removepoints(interaction: discord.Interaction, user: discord.Member | discord.Role, amount: int):
     if not interaction.user.guild_permissions.administrator:
         await interaction.response.send_message("คุณไม่มีสิทธิ์ใช้คำสั่งนี้ (ต้องเป็นผู้ดูแลเซิร์ฟเวอร์)", ephemeral=True)
         return
     
-    await interaction.response.defer()  
+    await interaction.response.defer()
 
-    ref = db.collection("points").document(str(user.id))
-    doc = ref.get()
-
-    if doc.exists and doc.to_dict()["points"] >= amount:
-        new_points = doc.to_dict()["points"] - amount
-        ref.set({"points": new_points})
-        await interaction.followup.send(f"ลด {amount} point ของ {user.mention} แล้ว!")  
+    if isinstance(user, discord.Role):
+        members = [member for member in user.members if not member.bot]
+        if not members:
+            await interaction.followup.send(f"⚠️ ไม่มีสมาชิกในยศ {user.mention} ที่สามารถลดพอยต์ได้!", ephemeral=True)
+            return
     else:
-        await interaction.followup.send("Point ไม่เพียงพอหรือไม่มีข้อมูล!") 
+        members = [user]
+
+    await update_points(members, -amount)
+
+    await interaction.followup.send(f"ลด {amount} พอยต์จาก {', '.join(member.mention for member in members)} สำเร็จ!", ephemeral=True)
 
 # คำสั่งดู point
 @bot.tree.command(name="points", description="ดู point ของตัวเองหรือผู้อื่น")
