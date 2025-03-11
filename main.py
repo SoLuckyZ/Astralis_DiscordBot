@@ -1,6 +1,6 @@
 import discord
 import os
-from discord import app_commands
+from discord import app_commands, ui
 from discord.ext import commands
 from discord.ui import View, Button
 from PIL import Image, ImageDraw, ImageFont
@@ -79,7 +79,7 @@ class StudentCardModal(discord.ui.Modal, title="กรอกข้อมูล�
 
 # ✅ Modal แก้ไขข้อมูล (แยกจาก StudentCardModal)
 class EditInfoModal(discord.ui.Modal, title="แก้ไขข้อมูลบัตรนักเรียน"):
-    house = discord.ui.TextInput(label="บ้าน", placeholder="ซาราเซล/เลเซีย/บารัน/ซูซากุ/ลิลิธ", required=True)
+    house = discord.ui.TextInput(label="บ้าน", placeholder="เช่น มังกรฟ้า , วิหกเพลิง", required=True)
     class_name = discord.ui.TextInput(label="ชั้น", placeholder="ใส่ชั้นเรียนของคุณ", required=True)
     DOB = discord.ui.TextInput(label="วันเกิด", placeholder="วว/ดด/ปปปป", required=True)
     name = discord.ui.TextInput(label="ชื่อ", placeholder="ใส่ชื่อของคุณ", required=True)
@@ -381,14 +381,303 @@ async def scoreboard(interaction: discord.Interaction):
     
     await interaction.followup.send(embed=embed, view=view)
 
+# เพิ่มไอเทมในร้านค้า
+@bot.tree.command(name="addshop", description="เพิ่มไอเทมเข้าร้านค้า")
+async def addshop(interaction: discord.Interaction, item_name: str, price: int, quantity: int):
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("คุณไม่มีสิทธิ์ใช้คำสั่งนี้ (ต้องเป็นผู้ดูแลเซิร์ฟเวอร์)", ephemeral=True)
+        return
+
+    await interaction.response.defer()
+    
+    shop_ref = db.collection("shop").document(item_name)
+    item_data = shop_ref.get().to_dict()
+    
+    if item_data:
+        # ถ้ามีไอเทมนี้อยู่แล้ว ให้เพิ่มจำนวนเข้าไป
+        new_quantity = item_data["quantity"] + quantity
+        shop_ref.update({"quantity": new_quantity})
+    else:
+        # ถ้ายังไม่มีไอเทมนี้ ให้สร้างใหม่
+        shop_ref.set({"name": item_name, "price": price, "quantity": quantity})
+
+    # ✅ ใช้ followup.send แทน send_message เพื่อป้องกันปัญหา
+    await interaction.followup.send(f"✅ ไอเทม '{item_name}' ถูกเพิ่มเข้าไปในร้านค้าแล้ว!", ephemeral=True)
+
+@bot.tree.command(name="removeshop", description="ลบไอเทมออกจากร้านค้า")
+@discord.app_commands.describe(item_name="ชื่อไอเทมที่ต้องการลบ", amount="จำนวนที่ต้องการลบ")
+async def removeshop(interaction: discord.Interaction, item_name: str, amount: int):
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("คุณไม่มีสิทธิ์ใช้คำสั่งนี้ (ต้องเป็นผู้ดูแลเซิร์ฟเวอร์)", ephemeral=True)
+        return
+    await interaction.response.defer()
+
+    if amount <= 0:
+        await interaction.followup.send("❌ จำนวนต้องมากกว่า 0", ephemeral=True)
+        return
+
+    shop_ref = db.collection("shop").document(item_name.lower())
+    shop_doc = shop_ref.get()
+
+    if shop_doc.exists:
+        shop_data = shop_doc.to_dict()
+        current_quantity = shop_data.get("quantity", 0)
+
+        if current_quantity >= amount:
+            shop_ref.update({"quantity": current_quantity - amount})
+            await interaction.followup.send(f"🛒 ลบ {amount} ชิ้นของ '{item_name}' ออกจากร้านค้าแล้ว!")
+        else:
+            await interaction.followup.send("❌ จำนวนไอเทมในร้านค้าไม่เพียงพอ", ephemeral=True)
+    else:
+        await interaction.followup.send("❌ ไม่พบไอเทมนี้ในร้านค้า", ephemeral=True)
+
+@bot.tree.command(name="setprice", description="เปลี่ยนราคาไอเทมในร้านค้า")
+@discord.app_commands.describe(item_name="ชื่อไอเทมที่ต้องการเปลี่ยนราคา", new_price="ราคาที่ต้องการตั้งใหม่")
+async def setprice(interaction: discord.Interaction, item_name: str, new_price: int):
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("คุณไม่มีสิทธิ์ใช้คำสั่งนี้ (ต้องเป็นผู้ดูแลเซิร์ฟเวอร์)", ephemeral=True)
+        return
+    await interaction.response.defer()
+
+    if new_price < 0:
+        await interaction.followup.send("❌ ราคาต้องเป็นเลขจำนวนเต็มบวก", ephemeral=True)
+        return
+
+    shop_ref = db.collection("shop").document(item_name.lower())
+    shop_doc = shop_ref.get()
+
+    if shop_doc.exists:
+        shop_ref.update({"price": new_price})
+        await interaction.followup.send(f"💰 เปลี่ยนราคา '{item_name}' เป็น {new_price} พอยต์แล้ว!")
+    else:
+        await interaction.followup.send("❌ ไม่พบไอเทมนี้ในร้านค้า", ephemeral=True)
+
+# แสดงร้านค้า
+@bot.tree.command(name="shop", description="แสดงร้านค้า")
+async def shop(interaction: discord.Interaction):
+    await interaction.response.defer()
+
+    shop_ref = db.collection("shop")
+    items = [doc.to_dict() for doc in shop_ref.stream() if doc.to_dict()["quantity"] > 0]
+
+    if not items:
+        await interaction.followup.send("🛒 ร้านค้าว่างเปล่า ไม่มีสินค้าให้ซื้อ!", ephemeral=True)
+        return
+
+    view = ShopView(items)  # ✅ ใช้ View ใหม่ที่รองรับปุ่มเปลี่ยนหน้า
+    await interaction.followup.send(embed=view.generate_embed(), view=view)
+
+class ShopView(discord.ui.View):
+    def __init__(self, items, page=0):
+        super().__init__()
+        self.items = items
+        self.page = page
+        self.items_per_page = 5
+        self.max_page = (len(self.items) - 1) // self.items_per_page
+
+        # ✅ ต้องสร้าง dropdown ก่อนเรียก `update_buttons()`
+        self.dropdown = discord.ui.Select(
+            placeholder="เลือกไอเทมที่ต้องการซื้อ...",
+            options=self.generate_dropdown_options()
+        )
+        self.dropdown.callback = self.select_item
+
+        self.update_buttons()  # ✅ เรียกอัปเดตปุ่มหลังจากมี dropdown แล้ว
+
+    def generate_embed(self):
+        """สร้าง embed ของร้านค้าตามหน้าปัจจุบัน"""
+        embed = discord.Embed(title="🛒 ร้านค้า", color=0x191970, timestamp= discord.utils.utcnow())
+
+        start = self.page * self.items_per_page
+        end = start + self.items_per_page
+
+        for item in self.items[start:end]:
+            embed.add_field(
+                name=item["name"],
+                value=f"💰 ราคา: {item['price']} พอยต์ | 📦 คงเหลือ: {item['quantity']}",
+                inline=False
+            )
+
+        return embed
+
+    def generate_dropdown_options(self):
+        """สร้างตัวเลือก dropdown ตามหน้าปัจจุบัน"""
+        start = self.page * self.items_per_page
+        end = start + self.items_per_page
+
+        return [
+            discord.SelectOption(
+                label=item["name"],
+                description=f"{item['price']} พอยต์",
+                value=item["name"]
+            )
+            for item in self.items[start:end]
+        ]
+
+    async def select_item(self, interaction: discord.Interaction):
+        """เมื่อเลือกไอเทมจาก Dropdown ให้แสดง Modal"""
+        item_name = self.dropdown.values[0]
+        item_data = next((item for item in self.items if item["name"] == item_name), None)
+
+        if item_data:
+            modal = PurchaseModal(item_data["name"], item_data["price"], item_data["quantity"])
+            await interaction.response.send_modal(modal)
+
+    def update_buttons(self):
+        """อัปเดตปุ่มเปลี่ยนหน้า"""
+        self.clear_items()
+        self.add_item(self.dropdown)  # ✅ เพิ่ม dropdown กลับเข้ามาหลังจาก clear
+
+        self.prev_page = discord.ui.Button(label="⬅️", style=discord.ButtonStyle.primary, disabled=self.page == 0)
+        self.next_page = discord.ui.Button(label="➡️", style=discord.ButtonStyle.primary, disabled=self.page >= self.max_page)
+
+        self.prev_page.callback = self.go_prev
+        self.next_page.callback = self.go_next
+
+        self.add_item(self.prev_page)
+        self.add_item(self.next_page)
+
+    async def go_prev(self, interaction: discord.Interaction):
+        """กดปุ่มย้อนหน้าร้านค้า"""
+        self.page -= 1
+        self.update_buttons()
+        self.dropdown.options = self.generate_dropdown_options()
+        await interaction.response.edit_message(embed=self.generate_embed(), view=self)
+
+    async def go_next(self, interaction: discord.Interaction):
+        """กดปุ่มไปหน้าถัดไปร้านค้า"""
+        self.page += 1
+        self.update_buttons()
+        self.dropdown.options = self.generate_dropdown_options()
+        await interaction.response.edit_message(embed=self.generate_embed(), view=self)
+
+class PurchaseModal(discord.ui.Modal):
+    def __init__(self, item_name, price, quantity_available):
+        super().__init__(title="ยืนยันการซื้อ")
+        self.item_name = item_name
+        self.price = price
+        self.quantity_available = quantity_available
+
+        self.quantity_input = discord.ui.TextInput(
+            label="จำนวนที่ต้องการซื้อ",
+            placeholder=f"สูงสุด {quantity_available}",
+            required=True
+        )
+        self.add_item(self.quantity_input)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        quantity = int(self.quantity_input.value)
+        total_price = self.price * quantity
+
+        user_ref = db.collection("points").document(str(interaction.user.id))
+        user_doc = user_ref.get()
+
+        current_points = user_doc.to_dict().get("points", 0) if user_doc.exists else 0
+
+        if current_points >= total_price and quantity <= self.quantity_available:
+            user_ref.update({"points": current_points - total_price})
+            shop_ref = db.collection("shop").document(self.item_name.lower())
+            shop_ref.update({"quantity": self.quantity_available - quantity})
+
+            inventory_ref = db.collection("inventory").document(str(interaction.user.id))
+            inventory_doc = inventory_ref.get()
+
+            if inventory_doc.exists:
+                inventory_data = inventory_doc.to_dict()
+                inventory_data[self.item_name] = inventory_data.get(self.item_name, 0) + quantity
+                inventory_ref.update(inventory_data)
+            else:
+                inventory_ref.set({self.item_name: quantity})
+
+            await interaction.response.send_message(f"✅ คุณซื้อ {quantity} ชิ้นของ '{self.item_name}' รวม {total_price} พอยต์!", ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ คุณไม่มียอดพอยต์เพียงพอ หรือสินค้าหมด", ephemeral=True)
+
+# ให้ไอเทมผู้ใช้
+@bot.tree.command(name="additem", description="เพิ่มไอเทมให้กับผู้ใช้")
+async def additem(interaction: discord.Interaction, user: discord.Member, item_name: str, quantity: int):
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("คุณไม่มีสิทธิ์ใช้คำสั่งนี้ (ต้องเป็นผู้ดูแลเซิร์ฟเวอร์)", ephemeral=True)
+        return
+    await interaction.response.defer()
+
+    inventory_ref = db.collection("inventory").document(str(user.id))
+    inventory_doc = inventory_ref.get()
+
+    if inventory_doc.exists:
+        inventory_data = inventory_doc.to_dict()
+        inventory_data[item_name] = inventory_data.get(item_name, 0) + quantity
+        inventory_ref.update(inventory_data)
+    else:
+        inventory_ref.set({item_name: quantity})
+
+    await interaction.followup.send(f"✅ เพิ่มไอเทม '{item_name}' จำนวน {quantity} ชิ้นให้กับ {user.mention} สำเร็จ!", ephemeral=True)
+
+@bot.tree.command(name="removeitem", description="ลบไอเทมออกจาก inventory ของผู้ใช้")
+@discord.app_commands.describe(user="ผู้ใช้ที่ต้องการลบไอเทม", item_name="ชื่อไอเทม", amount="จำนวนที่ต้องการลบ")
+async def removeitem(interaction: discord.Interaction, user: discord.User, item_name: str, amount: int):
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("คุณไม่มีสิทธิ์ใช้คำสั่งนี้ (ต้องเป็นผู้ดูแลเซิร์ฟเวอร์)", ephemeral=True)
+        return
+    await interaction.response.defer()
+
+    if amount <= 0:
+        await interaction.followup.send("❌ จำนวนต้องมากกว่า 0", ephemeral=True)
+        return
+
+    inventory_ref = db.collection("inventory").document(str(user.id))
+    inventory_doc = inventory_ref.get()
+
+    if inventory_doc.exists:
+        inventory_data = inventory_doc.to_dict()
+        current_quantity = inventory_data.get(item_name, 0)
+
+        if current_quantity >= amount:
+            if current_quantity == amount:
+                del inventory_data[item_name]  # ลบไอเทมออกจาก inventory ถ้าจำนวนเป็น 0
+            else:
+                inventory_data[item_name] -= amount
+
+            inventory_ref.set(inventory_data)
+            await interaction.followup.send(f"📦 ลบ {amount} ชิ้นของ '{item_name}' ออกจาก inventory ของ {user.display_name} แล้ว!")
+        else:
+            await interaction.followup.send("❌ จำนวนไอเทมใน inventory ไม่เพียงพอ", ephemeral=True)
+    else:
+        await interaction.followup.send("❌ ผู้ใช้ไม่มีไอเทมนี้", ephemeral=True)
+
+# ดู inventory
+@bot.tree.command(name="inventory", description="ดูรายการไอเทมของคุณหรือของผู้อื่น")
+@discord.app_commands.describe(user="ระบุผู้ใช้ที่ต้องการดู Inventory")
+async def inventory(interaction: discord.Interaction, user: discord.User | None = None):
+    await interaction.response.defer()
+
+    # ถ้าไม่ระบุ user → ดู inventory ของตัวเอง
+    target_user = user or interaction.user
+
+    inventory_ref = db.collection("inventory").document(str(target_user.id))
+    inventory_doc = inventory_ref.get()
+
+    if inventory_doc.exists:
+        inventory_data = inventory_doc.to_dict()
+        items = [f"{item} - {quantity} ชิ้น" for item, quantity in inventory_data.items()]
+        embed = discord.Embed(
+            title=f"📦 รายการไอเทมของ {target_user.display_name}",
+            description="\n".join(items),
+            color=0x191970, 
+            timestamp= discord.utils.utcnow()
+            )
+        await interaction.followup.send(embed=embed)
+    else:
+        await interaction.followup.send(f"❌ {target_user.display_name} ยังไม่มีไอเทมใน inventory", ephemeral=True)
+
 # คำสั่ง help
 @bot.tree.command(name='help', description='วิธีใช้งานคำสั่งต่างๆ')
 async def helpcommand(interaction):
     emmbed = discord.Embed(title='Bot Commands - คำสั่งที่สามารถใช้งานได้ ', description='[ใช้ Slash Command]', color=0x191970, timestamp= discord.utils.utcnow())
 
     # ใส่ข้อมูล
-    emmbed.add_field(name='General', value='`/points @ผู้ใช้`  - เพื่อดูพอยต์ของคุณ\n`/leaderboard` - เพื่อดูตารางอันดับพอยต์ของทุกคน\n`/studentcard` - เพื่อสร้างบัตรนักเรียน\n`/viewcard @ผู้ใช้` - เพื่อดูบัตรนักเรียนของคุณ', inline=False)
-    emmbed.add_field(name='Administrator', value='`/addpoints @ผู้ใช้ จำนวน` - เพื่อเพิ่มพอยต์ให้ @ผู้ใช้\n`/removepoints @ผู้ใช้ จำนวน` - เพื่อลดพอยต์ของ @ผู้ใช้', inline=False)
+    emmbed.add_field(name='General', value='`/points [@ผู้ใช้]`  - เพื่อดูพอยต์ของคุณหรือคนอื่น\n`/studentcard` - เพื่อสร้างบัตรนักเรียน\n`/viewcard [@ผู้ใช้]` - เพื่อดูบัตรนักเรียนของคุณ\n`/inventory [@ผู้ใช้]` - เพื่อดูไอเทมในกระเป๋าคุณหรือคนอื่น\n`/shop` - เพื่อเปิดดูร้านค้า', inline=False)
+    emmbed.add_field(name='Administrator', value='`/addpoints [@ผู้ใช้] [จำนวน]` - เพื่อเพิ่มพอยต์ให้ @ผู้ใช้\n`/removepoints [@ผู้ใช้] [จำนวน]` - เพื่อลดพอยต์ของ @ผู้ใช้\n`/addshop [ชื่อไอเทม] [ราคาไอเทม] [จำนวนที่จะเพิ่ม]` - เพื่อเพิ่มไอเทมเข้าไปยังร้านค้า\n`/removeshop [ชื่อไอเทม] [จำนวนที่จะลบ]` - เพื่อลบไอเทมในร้านค้า\n`/setprice [ชื่อไอเทม] [ราคาใหม่]` - เพื่อเปลี่ยนราคาไอเทมในร้านค้า\n`/additem [@ผู้ใช้] [ชื่อไอเทม] [จำนวน]` - เพื่อเพิ่มไอเทมไปยังกระเป๋าของ @ผู้ใช้\n`/removeitem [@ผู้ใช้] [ชื่อไอเทม] [จำนวน]` - เพื่อลบไอเทมในกระเป๋าของ @ผู้ใช้', inline=False)
 
     await interaction.response.send_message(embed = emmbed)
 
