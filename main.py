@@ -44,7 +44,7 @@ bot = StudentCardBot()
 
 # ✅ Modal กรอกข้อมูล
 class StudentCardModal(discord.ui.Modal, title="กรอกข้อมูลบัตรนักเรียน"):
-    house = discord.ui.TextInput(label="บ้าน", placeholder="เช่น มังกรฟ้า , วิหกเพลิง", required=True)
+    house = discord.ui.TextInput(label="บ้าน", placeholder="ลิลิธ/ซาราเซล/เลเซีย/บารัน/ซูซากุ", required=True)
     class_name = discord.ui.TextInput(label="ชั้น", placeholder="ใส่ชั้นเรียนของคุณ", required=True)
     DOB = discord.ui.TextInput(label="วันเกิด", placeholder="วว/ดด/ปปปป", required=True)
     name = discord.ui.TextInput(label="ชื่อ", placeholder="ใส่ชื่อของคุณ", required=True)
@@ -79,7 +79,7 @@ class StudentCardModal(discord.ui.Modal, title="กรอกข้อมูล�
 
 # ✅ Modal แก้ไขข้อมูล (แยกจาก StudentCardModal)
 class EditInfoModal(discord.ui.Modal, title="แก้ไขข้อมูลบัตรนักเรียน"):
-    house = discord.ui.TextInput(label="บ้าน", placeholder="เช่น มังกรฟ้า , วิหกเพลิง", required=True)
+    house = discord.ui.TextInput(label="บ้าน", placeholder="ลิลิธ/ซาราเซล/เลเซีย/บารัน/ซูซากุ", required=True)
     class_name = discord.ui.TextInput(label="ชั้น", placeholder="ใส่ชั้นเรียนของคุณ", required=True)
     DOB = discord.ui.TextInput(label="วันเกิด", placeholder="วว/ดด/ปปปป", required=True)
     name = discord.ui.TextInput(label="ชื่อ", placeholder="ใส่ชื่อของคุณ", required=True)
@@ -349,14 +349,14 @@ class ScoreboardView(View):
         embed.set_footer(text=f"Page {self.page + 1} / {self.max_pages + 1}")
         return embed
 
-    @discord.ui.button(label="⬅️ Previous", style=discord.ButtonStyle.primary, disabled=True)
+    @discord.ui.button(label="⬅️", style=discord.ButtonStyle.primary, disabled=True)
     async def previous_button(self, interaction: discord.Interaction, button: Button):
         if self.page > 0:
             self.page -= 1
             self.update_buttons()
             await self.update_embed(interaction)
 
-    @discord.ui.button(label="➡️ Next", style=discord.ButtonStyle.primary, disabled=False)
+    @discord.ui.button(label="➡️", style=discord.ButtonStyle.primary, disabled=False)
     async def next_button(self, interaction: discord.Interaction, button: Button):
         if self.page < self.max_pages:
             self.page += 1
