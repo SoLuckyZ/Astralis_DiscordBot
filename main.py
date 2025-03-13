@@ -332,11 +332,11 @@ async def leaderboard(interaction: discord.Interaction):
     await interaction.response.send_message(embed=view.generate_embed(), view=view)
 
 class LeaderboardView(discord.ui.View):
-    def __init__(self, data, page=0):
+    def __init__(self, users, page=0):
         super().__init__()
-        self.data = data
+        self.users = data
         self.page = page
-        self.items_per_page = 10
+        self.users_per_page = 10
         self.max_page = (len(self.data) - 1) // self.items_per_page
 
         self.update_buttons()  # ✅ อัปเดตปุ่มหลังจากกำหนดค่าต่างๆ
@@ -348,10 +348,10 @@ class LeaderboardView(discord.ui.View):
         start = self.page * self.items_per_page
         end = start + self.items_per_page
 
-        for i, entry in enumerate(self.data[start:end], start=start + 1):
+        for i, user in enumerate(self.data[start:end], 1):
             embed.add_field(
                 name=f"{start + i}. {user['username']}",
-                value=f"▫️ {entry['points']} พอยต์",
+                value=f"▫️ {user['points']} พอยต์",
                 inline=False
             )
 
