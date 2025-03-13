@@ -317,77 +317,80 @@ async def points(interaction: discord.Interaction, user: discord.Member = None):
     await interaction.followup.send(embed=embed) 
 
 #ระบบกระดานคะแนน
-class ScoreboardView(View):
+@bot.tree.command(name="leaderboard", description="แสดงกระดานคะแนน")
+async def leaderboard(interaction: discord.Interaction):
+    await interaction.response.defer()
+
+    users_ref = db.collection("points").order_by("points", direction=firestore.Query.DESCENDING).stream()
+    data = [{"name": user.id, "points": user.to_dict().get("points", 0)} for user in users_ref]
+
+    if not data:
+        await interaction.followup.send("ไม่มีข้อมูลกระดานคะแนน", ephemeral=True)
+        return
+
+    view = LeaderboardView(data)
+    await interaction.followup.send(embed=view.generate_embed(), view=view)
+
+class LeaderboardView(discord.ui.View):
     def __init__(self, data, page=0):
-        super().__init__(timeout=None)  # ✅ ป้องกัน interaction หมดอายุ
+        super().__init__()
         self.data = data
         self.page = page
-        self.max_pages = (len(data) - 1) // 10
-        self.update_buttons()
+        self.items_per_page = 10
+        self.max_page = (len(self.data) - 1) // self.items_per_page
 
-    async def update_embed(self, interaction: discord.Interaction):
-        self.update_buttons()
-        embed = await self.get_embed(interaction.client)
+        self.update_buttons()  # ✅ อัปเดตปุ่มหลังจากกำหนดค่าต่างๆ
 
-        try:
-            # ถ้า interaction ยังไม่หมดอายุ ใช้ edit_message
-            await interaction.response.edit_message(embed=embed, view=self)
-        except discord.errors.NotFound:
-            # ถ้า interaction หมดอายุ ใช้ followup ส่งข้อความใหม่
-            await interaction.followup.send(embed=embed, view=self)
-
-    def update_buttons(self):
-        """อัปเดตปุ่มให้ถูกต้องตามหน้าปัจจุบัน"""
-        self.children[0].disabled = self.page == 0  # ปุ่มย้อนกลับ
-        self.children[1].disabled = self.page >= self.max_pages  # ปุ่มไปหน้าใหม่
-
-    async def get_embed(self, bot):
-        start_idx = self.page * 10
-        end_idx = start_idx + 10
-        leaderboard = self.data[start_idx:end_idx]
-
+    def generate_embed(self):
+        """สร้าง embed ของตารางคะแนนตามหน้าปัจจุบัน"""
         embed = discord.Embed(title="🏆 Leaderboard", color=0x191970, timestamp=discord.utils.utcnow())
-        for i, (user_id, points) in enumerate(leaderboard, start=start_idx + 1):
-            user = await bot.fetch_user(int(user_id))
-            username = user.name if user else f"Unknown ({user_id})"
-            embed.add_field(name=f"#{i} {username}", value=f"▫️ {points} Points", inline=False)
-        
-        embed.set_footer(text=f"Page {self.page + 1} / {self.max_pages + 1}")
+
+        start = self.page * self.items_per_page
+        end = start + self.items_per_page
+
+        for i, entry in enumerate(self.data[start:end], start=start + 1):
+            embed.add_field(
+                name=f"#{i} {entry['name']}",
+                value=f"▫️ {entry['points']} พอยต์",
+                inline=False
+            )
+
         return embed
 
-    @discord.ui.button(label="⬅️", style=discord.ButtonStyle.primary, disabled=True)
-    async def previous_button(self, interaction: discord.Interaction, button: Button):
-        if self.page > 0:
-            self.page -= 1
-            await self.update_embed(interaction)
+    def update_buttons(self):
+        """อัปเดตปุ่มเปลี่ยนหน้า"""
+        self.clear_items()  # ล้างปุ่มเก่า
 
-    @discord.ui.button(label="➡️", style=discord.ButtonStyle.primary, disabled=False)
-    async def next_button(self, interaction: discord.Interaction, button: Button):
-        if self.page < self.max_pages:
-            self.page += 1
-            await self.update_embed(interaction)
+        self.prev_page = discord.ui.Button(label="⬅️", style=discord.ButtonStyle.primary, disabled=self.page == 0)
+        self.next_page = discord.ui.Button(label="➡️", style=discord.ButtonStyle.primary, disabled=self.page >= self.max_page)
 
-@bot.tree.command(name="leaderboard", description="ดูตารางอันดับ(พอยต์)ของทุกคน")
-async def scoreboard(interaction: discord.Interaction):
-    if interaction.expires_at and interaction.expires_at < discord.utils.utcnow():
-        await interaction.followup.send("⚠️ Interaction หมดอายุแล้ว ลองใหม่อีกครั้ง!", ephemeral=True)
-        return
+        self.prev_page.callback = self.go_prev
+        self.next_page.callback = self.go_next
 
-    await interaction.response.defer(thinking=True)  # ✅ ใช้ thinking=True เพื่อบอกว่ากำลังโหลดข้อมูล
+        self.add_item(self.prev_page)
+        self.add_item(self.next_page)
 
-    users_ref = db.collection("points").stream()
-    scores = {doc.id: doc.to_dict().get("points", 0) for doc in users_ref}
+    async def go_prev(self, interaction: discord.Interaction):
+        """กดปุ่มย้อนหน้ากระดานคะแนน"""
+        self.page -= 1
+        self.update_buttons()
+        new_embed = self.generate_embed()
 
-    if not scores:
-        await interaction.followup.send("⚠️ ไม่มีข้อมูลคะแนน!", ephemeral=True)
-        return
+        try:
+            await interaction.response.edit_message(embed=new_embed, view=self)
+        except discord.errors.NotFound:
+            await interaction.followup.send(embed=new_embed, view=self)
 
-    sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-    
-    view = ScoreboardView(sorted_scores)
-    embed = await view.get_embed(interaction.client)
-    
-    await interaction.followup.send(embed=embed, view=view)
+    async def go_next(self, interaction: discord.Interaction):
+        """กดปุ่มไปหน้าถัดไปของกระดานคะแนน"""
+        self.page += 1
+        self.update_buttons()
+        new_embed = self.generate_embed()
+
+        try:
+            await interaction.response.edit_message(embed=new_embed, view=self)
+        except discord.errors.NotFound:
+            await interaction.followup.send(embed=new_embed, view=self)
 
 # เพิ่มไอเทมในร้านค้า
 @bot.tree.command(name="addshop", description="เพิ่มไอเทมเข้าร้านค้า")
