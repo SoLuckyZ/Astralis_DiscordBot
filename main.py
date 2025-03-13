@@ -319,24 +319,24 @@ async def points(interaction: discord.Interaction, user: discord.Member = None):
 #ระบบกระดานคะแนน
 @bot.tree.command(name="leaderboard", description="แสดงกระดานคะแนน")
 async def leaderboard(interaction: discord.Interaction):
-    await interaction.response.defer()
+    # ไม่ใช้ defer() เพราะ interaction อาจหมดอายุ
     shop_ref = db.collection("points")
     users = [doc.to_dict() for doc in shop_ref.stream()]
     users = sorted(users, key=lambda x: x.get("points", 0), reverse=True)
 
     if not users:
-        await interaction.followup.send("ไม่มีข้อมูลกระดานคะแนน", ephemeral=True)
+        await interaction.response.send_message("ไม่มีข้อมูลกระดานคะแนน", ephemeral=True)
         return
 
     view = LeaderboardView(users)
-    await interaction.followup.send(embed=view.generate_embed(), view=view)
+    await interaction.response.send_message(embed=view.generate_embed(), view=view)
 
 class LeaderboardView(discord.ui.View):
-    def __init__(self, users, page=0):
+    def __init__(self, data, page=0):
         super().__init__()
-        self.users = data
+        self.data = data
         self.page = page
-        self.users_per_page = 10
+        self.items_per_page = 10
         self.max_page = (len(self.data) - 1) // self.items_per_page
 
         self.update_buttons()  # ✅ อัปเดตปุ่มหลังจากกำหนดค่าต่างๆ
@@ -348,10 +348,10 @@ class LeaderboardView(discord.ui.View):
         start = self.page * self.items_per_page
         end = start + self.items_per_page
 
-        for i, user in enumerate(self.data[start:end], 1):
+        for i, entry in enumerate(self.data[start:end], start=start + 1):
             embed.add_field(
                 name=f"{start + i}. {user['username']}",
-                value=f"▫️ {user['points']} พอยต์",
+                value=f"▫️ {entry['points']} พอยต์",
                 inline=False
             )
 
