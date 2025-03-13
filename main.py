@@ -319,17 +319,17 @@ async def points(interaction: discord.Interaction, user: discord.Member = None):
 #ระบบกระดานคะแนน
 @bot.tree.command(name="leaderboard", description="แสดงกระดานคะแนน")
 async def leaderboard(interaction: discord.Interaction):
-    await interaction.response.defer()
+    # ไม่ใช้ defer() เพราะ interaction อาจหมดอายุ
+    shop_ref = db.collection("points")
+    users = [doc.to_dict() for doc in shop_ref.stream()]
+    users = sorted(users, key=lambda x: x.get("points", 0), reverse=True)
 
-    users_ref = db.collection("points").order_by("points", direction=firestore.Query.DESCENDING).stream()
-    data = [{"name": user.id, "points": user.to_dict().get("points", 0)} for user in users_ref]
-
-    if not data:
-        await interaction.followup.send("ไม่มีข้อมูลกระดานคะแนน", ephemeral=True)
+    if not users:
+        await interaction.response.send_message("ไม่มีข้อมูลกระดานคะแนน", ephemeral=True)
         return
 
-    view = LeaderboardView(data)
-    await interaction.followup.send(embed=view.generate_embed(), view=view)
+    view = LeaderboardView(users)
+    await interaction.response.send_message(embed=view.generate_embed(), view=view)
 
 class LeaderboardView(discord.ui.View):
     def __init__(self, data, page=0):
