@@ -319,10 +319,10 @@ async def points(interaction: discord.Interaction, user: discord.Member = None):
 #ระบบกระดานคะแนน
 class ScoreboardView(View):
     def __init__(self, data, page=0):
-        super().__init__(timeout=None)  # ✅ ทำให้ปุ่มไม่หมดอายุ
+        super().__init__(timeout=None)  # ✅ ป้องกัน interaction หมดอายุ
         self.data = data
         self.page = page
-        self.max_pages = (len(data) - 1) // 10  # คำนวณจำนวนหน้าสูงสุด
+        self.max_pages = (len(data) - 1) // 10
         self.update_buttons()
 
     async def update_embed(self, interaction: discord.Interaction):
@@ -332,12 +332,12 @@ class ScoreboardView(View):
         try:
             await interaction.response.edit_message(embed=embed, view=self)
         except discord.errors.NotFound:
-            await interaction.followup.edit_message(embed=embed, view=self)  # ✅ ใช้ followup เมื่อ interaction หมดอายุ
+            await interaction.followup.edit_message(embed=embed, view=self)  # ✅ ใช้ followup แทนเมื่อ interaction หมดอายุ
 
     def update_buttons(self):
         """อัปเดตปุ่มให้ถูกต้องตามหน้าปัจจุบัน"""
-        self.children[0].disabled = self.page == 0  # ปุ่มซ้าย
-        self.children[1].disabled = self.page >= self.max_pages  # ปุ่มขวา
+        self.children[0].disabled = self.page == 0  # ปุ่มย้อนกลับ
+        self.children[1].disabled = self.page >= self.max_pages  # ปุ่มไปหน้าใหม่
 
     async def get_embed(self, bot):
         start_idx = self.page * 10
@@ -367,7 +367,11 @@ class ScoreboardView(View):
 
 @bot.tree.command(name="leaderboard", description="ดูตารางอันดับ(พอยต์)ของทุกคน")
 async def scoreboard(interaction: discord.Interaction):
-    await interaction.response.defer()
+    if interaction.expires_at and interaction.expires_at < discord.utils.utcnow():
+        await interaction.followup.send("⚠️ Interaction หมดอายุแล้ว ลองใหม่อีกครั้ง!", ephemeral=True)
+        return
+
+    await interaction.response.defer(thinking=True)  # ✅ ใช้ thinking=True เพื่อบอกว่ากำลังโหลดข้อมูล
 
     users_ref = db.collection("points").stream()
     scores = {doc.id: doc.to_dict().get("points", 0) for doc in users_ref}
