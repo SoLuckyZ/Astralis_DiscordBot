@@ -319,7 +319,7 @@ async def points(interaction: discord.Interaction, user: discord.Member = None):
 #ระบบกระดานคะแนน
 class ScoreboardView(View):
     def __init__(self, data, page=0):
-        super().__init__(timeout=120)
+        super().__init__(timeout=None)  # ✅ ทำให้ปุ่มไม่หมดอายุ
         self.data = data
         self.page = page
         self.max_pages = (len(data) - 1) // 10  # คำนวณจำนวนหน้าสูงสุด
@@ -328,21 +328,25 @@ class ScoreboardView(View):
     async def update_embed(self, interaction: discord.Interaction):
         self.update_buttons()
         embed = await self.get_embed(interaction.client)
-        await interaction.response.edit_message(embed=embed, view=self)
+
+        try:
+            await interaction.response.edit_message(embed=embed, view=self)
+        except discord.errors.NotFound:
+            await interaction.followup.edit_message(embed=embed, view=self)  # ✅ ใช้ followup เมื่อ interaction หมดอายุ
 
     def update_buttons(self):
         """อัปเดตปุ่มให้ถูกต้องตามหน้าปัจจุบัน"""
-        self.previous_button.disabled = self.page == 0
-        self.next_button.disabled = self.page >= self.max_pages
+        self.children[0].disabled = self.page == 0  # ปุ่มซ้าย
+        self.children[1].disabled = self.page >= self.max_pages  # ปุ่มขวา
 
     async def get_embed(self, bot):
         start_idx = self.page * 10
         end_idx = start_idx + 10
         leaderboard = self.data[start_idx:end_idx]
 
-        embed = discord.Embed(title="🏆 Leaderboard", color=0x191970, timestamp= discord.utils.utcnow())
+        embed = discord.Embed(title="🏆 Leaderboard", color=0x191970, timestamp=discord.utils.utcnow())
         for i, (user_id, points) in enumerate(leaderboard, start=start_idx + 1):
-            user = await bot.fetch_user(user_id)
+            user = await bot.fetch_user(int(user_id))
             username = user.name if user else f"Unknown ({user_id})"
             embed.add_field(name=f"#{i} {username}", value=f"▫️ {points} Points", inline=False)
         
@@ -353,14 +357,12 @@ class ScoreboardView(View):
     async def previous_button(self, interaction: discord.Interaction, button: Button):
         if self.page > 0:
             self.page -= 1
-            self.update_buttons()
             await self.update_embed(interaction)
 
     @discord.ui.button(label="➡️", style=discord.ButtonStyle.primary, disabled=False)
     async def next_button(self, interaction: discord.Interaction, button: Button):
         if self.page < self.max_pages:
             self.page += 1
-            self.update_buttons()
             await self.update_embed(interaction)
 
 @bot.tree.command(name="leaderboard", description="ดูตารางอันดับ(พอยต์)ของทุกคน")
