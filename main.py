@@ -350,11 +350,13 @@ class LeaderboardView(discord.ui.View):
 
         for i, entry in enumerate(self.data[start:end], start=start + 1):
             embed.add_field(
-                name=f"#{i} {entry['name']}",
+                name=f"{start + i}. {user['username']}",
                 value=f"▫️ {entry['points']} พอยต์",
                 inline=False
             )
 
+        embed.set_footer(text=f"หน้า {self.page + 1} / {self.max_page + 1}")
+        
         return embed
 
     def update_buttons(self):
