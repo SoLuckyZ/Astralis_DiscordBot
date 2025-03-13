@@ -319,17 +319,17 @@ async def points(interaction: discord.Interaction, user: discord.Member = None):
 #ระบบกระดานคะแนน
 @bot.tree.command(name="leaderboard", description="แสดงกระดานคะแนน")
 async def leaderboard(interaction: discord.Interaction):
-    # ไม่ใช้ defer() เพราะ interaction อาจหมดอายุ
+    await interaction.response.defer()
     shop_ref = db.collection("points")
     users = [doc.to_dict() for doc in shop_ref.stream()]
     users = sorted(users, key=lambda x: x.get("points", 0), reverse=True)
 
     if not users:
-        await interaction.response.send_message("ไม่มีข้อมูลกระดานคะแนน", ephemeral=True)
+        await interaction.followup.send("ไม่มีข้อมูลกระดานคะแนน", ephemeral=True)
         return
 
     view = LeaderboardView(users)
-    await interaction.response.send_message(embed=view.generate_embed(), view=view)
+    await interaction.followup.send(embed=view.generate_embed(), view=view)
 
 class LeaderboardView(discord.ui.View):
     def __init__(self, users, page=0):
