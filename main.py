@@ -322,7 +322,21 @@ async def leaderboard(interaction: discord.Interaction):
     await interaction.response.defer()
 
     users_ref = db.collection("points").order_by("points", direction=firestore.Query.DESCENDING).stream()
-    data = [{"name": user.id, "points": user.to_dict().get("points", 0)} for user in users_ref]
+    
+    data = []
+    for user in users_ref:
+        user_id = user.id
+        user_data = user.to_dict()
+        points = user_data.get("points", 0)
+
+        # ดึงชื่อผู้ใช้จาก ID
+        try:
+            discord_user = await bot.fetch_user(user_id)
+            username = discord_user.name  # ใช้ชื่อปกติ
+        except:
+            username = f"Unknown ({user_id})"  # ถ้าหาชื่อไม่เจอ
+
+        data.append({"username": username, "points": points})
 
     if not data:
         await interaction.followup.send("ไม่มีข้อมูลกระดานคะแนน", ephemeral=True)
@@ -338,11 +352,10 @@ class LeaderboardView(discord.ui.View):
         self.page = page
         self.items_per_page = 10
         self.max_page = (len(self.data) - 1) // self.items_per_page
-
-        self.update_buttons()  # ✅ อัปเดตปุ่มหลังจากกำหนดค่าต่างๆ
+        self.update_buttons()
 
     def generate_embed(self):
-        """สร้าง embed ของตารางคะแนนตามหน้าปัจจุบัน"""
+        """สร้าง embed ของกระดานคะแนนตามหน้าปัจจุบัน"""
         embed = discord.Embed(title="🏆 Leaderboard", color=0x191970, timestamp=discord.utils.utcnow())
 
         start = self.page * self.items_per_page
@@ -350,16 +363,19 @@ class LeaderboardView(discord.ui.View):
 
         for i, entry in enumerate(self.data[start:end], start=start + 1):
             embed.add_field(
-                name=f"#{i} {entry['name']}",
+                name=f"#{i} {entry['username']}",  # ใช้ชื่อผู้ใช้แทนไอดี
                 value=f"▫️ {entry['points']} พอยต์",
                 inline=False
             )
+
+        # ✅ แสดงเลขหน้า
+        embed.set_footer(text=f"หน้า {self.page + 1} / {self.max_page + 1}")
 
         return embed
 
     def update_buttons(self):
         """อัปเดตปุ่มเปลี่ยนหน้า"""
-        self.clear_items()  # ล้างปุ่มเก่า
+        self.clear_items()
 
         self.prev_page = discord.ui.Button(label="⬅️", style=discord.ButtonStyle.primary, disabled=self.page == 0)
         self.next_page = discord.ui.Button(label="➡️", style=discord.ButtonStyle.primary, disabled=self.page >= self.max_page)
@@ -371,26 +387,16 @@ class LeaderboardView(discord.ui.View):
         self.add_item(self.next_page)
 
     async def go_prev(self, interaction: discord.Interaction):
-        """กดปุ่มย้อนหน้ากระดานคะแนน"""
+        """ย้อนหน้ากระดานคะแนน"""
         self.page -= 1
         self.update_buttons()
-        new_embed = self.generate_embed()
-
-        try:
-            await interaction.response.edit_message(embed=new_embed, view=self)
-        except discord.errors.NotFound:
-            await interaction.followup.send(embed=new_embed, view=self)
+        await interaction.response.edit_message(embed=self.generate_embed(), view=self)
 
     async def go_next(self, interaction: discord.Interaction):
-        """กดปุ่มไปหน้าถัดไปของกระดานคะแนน"""
+        """ไปหน้าถัดไปของกระดานคะแนน"""
         self.page += 1
         self.update_buttons()
-        new_embed = self.generate_embed()
-
-        try:
-            await interaction.response.edit_message(embed=new_embed, view=self)
-        except discord.errors.NotFound:
-            await interaction.followup.send(embed=new_embed, view=self)
+        await interaction.response.edit_message(embed=self.generate_embed(), view=self)
 
 # เพิ่มไอเทมในร้านค้า
 @bot.tree.command(name="addshop", description="เพิ่มไอเทมเข้าร้านค้า")
