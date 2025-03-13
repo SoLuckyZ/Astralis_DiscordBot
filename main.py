@@ -330,9 +330,11 @@ class ScoreboardView(View):
         embed = await self.get_embed(interaction.client)
 
         try:
+            # ถ้า interaction ยังไม่หมดอายุ ใช้ edit_message
             await interaction.response.edit_message(embed=embed, view=self)
         except discord.errors.NotFound:
-            await interaction.followup.edit_message(embed=embed, view=self)  # ✅ ใช้ followup แทนเมื่อ interaction หมดอายุ
+            # ถ้า interaction หมดอายุ ใช้ followup ส่งข้อความใหม่
+            await interaction.followup.send(embed=embed, view=self)
 
     def update_buttons(self):
         """อัปเดตปุ่มให้ถูกต้องตามหน้าปัจจุบัน"""
